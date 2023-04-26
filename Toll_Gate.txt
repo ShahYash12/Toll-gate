@@ -1,0 +1,172 @@
+#include <Adafruit_MQTT_Client.h>
+#include<ESP8266WiFi.h>
+#include <Servo.h>
+
+#define network "TP-LINK_E4E0"
+#define password "93495950"
+
+#define server"io.adafruit.com"
+#define port 1883
+#define username "Yash33"
+#define key"aio_fZhA13rENJFnn4mpkGXcGNnidR07"
+
+#define servoPin 2 //D4
+#define trigPin 13 //D7
+#define echoPin 15 //D8
+#define irPin 12 //D6
+#define ConnectedPin 16 //D0 inbuilt LED
+
+long duration;
+int distance;
+float avg;
+float perc;
+int pw[] ={0, 0, 0, 0}; 
+int ans[] ={2, 4, 8, 6}; 
+bool arrived = false;
+bool arr = false;
+bool serv = true;
+
+Servo servo;
+WiFiClient esp;
+Adafruit_MQTT_Client mqtt (&esp,server,port,username,key);
+Adafruit_MQTT_Publish moisture=Adafruit_MQTT_Publish (&mqtt,username"/feeds/distance");
+Adafruit_MQTT_Publish indicator=Adafruit_MQTT_Publish (&mqtt,username"/feeds/indicator");
+Adafruit_MQTT_Subscribe gate =Adafruit_MQTT_Subscribe (&mqtt,username"/feeds/gate");
+Adafruit_MQTT_Subscribe code =Adafruit_MQTT_Subscribe (&mqtt,username"/feeds/code");
+
+void setup() 
+{
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+  servo.attach(servoPin); 
+  servo.write(150);
+
+  pinMode(irPin, INPUT);
+  pinMode(ConnectedPin, OUTPUT);
+  digitalWrite(ConnectedPin, HIGH);
+
+  WiFi.begin(network,password);
+  Serial.begin(115200);
+
+  Serial.println("Connecting to WiFi");
+  while(WiFi.status()!=WL_CONNECTED)
+  { 
+    delay(500);
+    Serial.print(".");
+  }
+  digitalWrite(ConnectedPin, LOW);
+  
+  mqtt.subscribe(&gate);
+  mqtt.subscribe(&code);
+  
+  Serial.println("connecting to MQTT");
+  while(mqtt.connect())
+  {
+    Serial.print(".");
+  }
+}
+
+void loop() 
+{ 
+  long sum = 0;
+  for(int i=0; i<2; i++){
+    digitalWrite(trigPin, LOW);
+    delayMicroseconds(2);
+
+    digitalWrite(trigPin, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(trigPin, LOW);
+    duration = pulseIn(echoPin, HIGH);
+
+    distance= duration*0.034/2;
+    sum += distance;
+    // Serial.print("Inst Dist: ");
+    // Serial.println(distance);
+    
+    for(int i=0; i<1700; i++){ //delay of 400
+      if(digitalRead(irPin) == LOW){
+        // servo.write(150);
+        // delay(2500);//change servo angle for 1 second
+        // servo.write(0);
+        arrived = true;
+      }
+      else{
+        arrived = false;
+        // servo.write(150);
+      }
+      if(digitalRead(irPin) == LOW && serv == true){
+        servo.write(0);
+        serv = false;
+      }
+      else if(digitalRead(irPin) == HIGH && serv == false){
+        servo.write(150);
+        serv = true;
+      }
+      delay(1);
+    }
+
+  }
+  avg = sum/2.0;
+
+  // Serial.print("Avg Dist: ");
+  Serial.println(avg);
+
+  // if(avg > 32) avg = 32;
+  moisture.publish(avg);
+
+
+  Adafruit_MQTT_Subscribe *subscription;
+  while ((subscription = mqtt.readSubscription(100)))
+  {
+    if(subscription == &gate) 
+    {
+      Serial.println((char *)gate.lastread);
+      int a = atoi((char *)gate.lastread);
+      if(a==1){
+        servo.write(180);
+        Serial.println("Servo On");
+        delay(2000);
+        servo.write(0);
+      }
+    }
+
+    if(subscription == &code) 
+    {
+      Serial.println((char *)code.lastread);
+      int a = atoi((char *)code.lastread);
+      pw[0] = pw[1];
+      pw[1] = pw[2];
+      pw[2] = pw[3];
+      pw[3] = a;
+
+      
+      if(check() && arrived){
+        // indicator.publish(0);
+        Serial.println("Matched");
+        servo.write(180);
+        delay(2000);//change servo angle for 1.2 second
+        servo.write(0);
+        indicator.publish(1);
+      }
+
+    }
+  }
+    if(arrived && arr == false){
+      Serial.println("arrived");
+      arr = true;
+      indicator.publish(0);
+    }
+    else if(!arrived && arr == true){
+      Serial.println("not arr");
+      arr = false;
+      indicator.publish(1);
+    }
+
+}
+
+bool check(){
+  for(int i=0; i<4; i++){
+    if(ans[i] != pw[i]) return false;
+  }
+  return true;
+}
