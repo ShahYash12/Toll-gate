@@ -2,12 +2,12 @@
 #include<ESP8266WiFi.h>
 #include <Servo.h>
 
-#define network "TP-LINK_E4E0"
-#define password "93495950"
+#define network ""
+#define password ""
 
 #define server"io.adafruit.com"
 #define port 1883
-#define username "Yash33"
+#define username ""
 #define key"aio_fZhA13rENJFnn4mpkGXcGNnidR07"
 
 #define servoPin 2 //D4
